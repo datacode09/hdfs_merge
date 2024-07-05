@@ -30,7 +30,7 @@ def create_temp_dir(fs, spark_context, base_path, permissions, owner, group):
     temp_dir = base_path + "/" + temp_dir_name
     hadoop_temp_dir = spark_context._gateway.jvm.Path(temp_dir)
     fs.mkdirs(hadoop_temp_dir)
-    fs.setPermission(hadoop_temp_dir, spark_context._gateway.jvm.FsPermission.valueOf(permissions))
+    fs.setPermission(hadoop_temp_dir, spark_context._gateway.jvm.org.apache.hadoop.fs.permission.FsPermission(permissions))
     fs.setOwner(hadoop_temp_dir, owner, group)
     return hadoop_temp_dir
 
