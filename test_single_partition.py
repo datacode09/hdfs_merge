@@ -13,17 +13,14 @@ def get_filesystem_manager(spark_context):
     FileSystem = spark_context._jvm.org.apache.hadoop.fs.FileSystem
     return FileSystem.get(spark_context._jsc.hadoopConfiguration())
 
-def get_existing_permissions(fs, spark_context, path):
-    status = fs.getFileStatus(spark_context._gateway.jvm.Path(path))
-    return status.getPermission().toString(), status.getOwner(), status.getGroup()
-
 def read_parquet_files(spark, files):
     return spark.read.parquet(*files)
 
 def write_parquet_file(df, output_dir):
     df.coalesce(1).write.mode("overwrite").parquet(output_dir)
 
-def get_hive_count(spark, query):
+def get_hive_count(spark, database, table, partition_key, partition_value):
+    query = f"SELECT COUNT(*) FROM {database}.{table} WHERE {partition_key}='{partition_value}'"
     return spark.sql(query).collect()[0][0]
 
 def repair_table(spark, database, table):
@@ -33,17 +30,15 @@ def delete_old_files(fs, spark_context, files):
     for file in files:
         fs.delete(spark_context._gateway.jvm.Path(file), True)
 
-def process_single_partition(spark, fs, database, table, partition_path):
+def rename_file(fs, spark_context, src, dst):
+    fs.rename(spark_context._gateway.jvm.Path(src), spark_context._gateway.jvm.Path(dst))
+
+def process_single_partition(spark, fs, database, table, partition_key, partition_value, partition_path):
     spark_context = spark.sparkContext
 
     try:
-        # Get existing permissions (not needed for this approach)
-        permissions, owner, group = get_existing_permissions(fs, spark_context, partition_path)
-
         # Run hive query to get pre-count
-        partition_value = partition_path.split('=')[-1]
-        pre_count_query = f"SELECT COUNT(*) FROM {database}.{table} WHERE partition_date='{partition_value}'"
-        pre_count = get_hive_count(spark, pre_count_query)
+        pre_count = get_hive_count(spark, database, table, partition_key, partition_value)
         logging.info(f"Pre-count for partition {partition_path}: {pre_count}")
 
         # Get a list of existing Parquet files within the partition
@@ -56,20 +51,22 @@ def process_single_partition(spark, fs, database, table, partition_path):
         temp_output_dir = partition_path + "/coalesced_temp"
         write_parquet_file(df, temp_output_dir)
 
+        # Get the path of the coalesced Parquet file
+        temp_parquet_file = [f.getPath().toString() for f in fs.listStatus(spark_context._gateway.jvm.Path(temp_output_dir)) if f.getPath().getName().endswith(".parquet")][0]
+        final_parquet_file = partition_path + "/coalesced_parquet.parquet"
+
         # Delete the older Parquet files
         delete_old_files(fs, spark_context, existing_parquet_files)
 
         # Rename the coalesced Parquet file
-        temp_parquet_file = [f.getPath().toString() for f in fs.listStatus(spark_context._gateway.jvm.Path(temp_output_dir)) if f.getPath().getName().endswith(".parquet")][0]
-        final_parquet_file = partition_path + "/coalesced_parquet.parquet"
-        fs.rename(spark_context._gateway.jvm.Path(temp_parquet_file), spark_context._gateway.jvm.Path(final_parquet_file))
+        rename_file(fs, spark_context, temp_parquet_file, final_parquet_file)
         fs.delete(spark_context._gateway.jvm.Path(temp_output_dir), True)
 
         # Repair the table
         repair_table(spark, database, table)
 
         # Run hive query to get post-count
-        post_count = get_hive_count(spark, pre_count_query)
+        post_count = get_hive_count(spark, database, table, partition_key, partition_value)
         logging.info(f"Post-count for partition {partition_path}: {post_count}")
 
         # Check if counts match
@@ -89,9 +86,11 @@ def main():
     # Test parameters for a single table and partition
     database = "your_database"
     table = "your_table"
-    partition_path = "hdfs://namenode:8020/path/to/partitioned/data/partition_date=2024-01-01"
+    partition_key = "partition_date"
+    partition_value = "2024-01-01"
+    partition_path = f"hdfs://namenode:8020/path/to/partitioned/data/{partition_key}={partition_value}"
 
-    process_single_partition(spark, fs, database, table, partition_path)
+    process_single_partition(spark, fs, database, table, partition_key, partition_value, partition_path)
 
     spark.stop()
 
