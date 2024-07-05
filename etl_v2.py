@@ -111,3 +111,29 @@ def run_workflow(spark, fs, hdfs_paths_and_tables, temp_base_path):
                     fs.delete(spark_context._gateway.jvm.Path(partition_path) / "coalesced_parquet.parquet", True)
                     repair_table(spark, table_details['database'], table_details['table'])
                     logging.error(f"Exception occurred. Restored original files and repaired the table for partition {partition_path}.")
+
+import enhancement_workflow as ew
+
+hdfs_paths_and_tables = {
+    "hdfs://namenode:8020/path/to/partitioned/data1": {
+        "database": "your_database1",
+        "table": "your_table1"
+    },
+    "hdfs://namenode:8020/path/to/partitioned/data2": {
+        "database": "your_database2",
+        "table": "your_table2"
+    }
+}
+
+temp_base_path = "/path/to/temp/base"
+
+def main():
+    spark = ew.create_spark_session("CoalesceParquetFilesInPartitions")
+    fs = ew.get_filesystem_manager(spark.sparkContext)
+
+    ew.run_workflow(spark, fs, hdfs_paths_and_tables, temp_base_path)
+
+    spark.stop()
+
+if __name__ == "__main__":
+    main()
