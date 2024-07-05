@@ -25,12 +25,12 @@ def get_existing_permissions(fs, path):
     status = fs.getFileStatus(spark_context._gateway.jvm.Path(path))
     return status.getPermission().toString(), status.getOwner(), status.getGroup()
 
-def create_temp_dir(fs, base_path, permissions, owner, group):
+def create_temp_dir(fs, spark_context, base_path, permissions, owner, group):
     temp_dir_name = str(uuid.uuid4())
     temp_dir = base_path + "/" + temp_dir_name
     hadoop_temp_dir = spark_context._gateway.jvm.Path(temp_dir)
     fs.mkdirs(hadoop_temp_dir)
-    fs.setPermission(hadoop_temp_dir, fs.Permission(permissions))
+    fs.setPermission(hadoop_temp_dir, spark_context._gateway.jvm.FsPermission.valueOf(permissions))
     fs.setOwner(hadoop_temp_dir, owner, group)
     return hadoop_temp_dir
 
