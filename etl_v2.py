@@ -10,6 +10,7 @@ def create_spark_session(app_name):
 
 def get_filesystem_manager(spark_context):
     java_import(spark_context._gateway.jvm, 'org.apache.hadoop.fs.Path')
+    java_import(spark_context._gateway.jvm, 'org.apache.hadoop.fs.permission.FsPermission')
     FileSystem = spark_context._jvm.org.apache.hadoop.fs.FileSystem
     return FileSystem.get(spark_context._jsc.hadoopConfiguration())
 
